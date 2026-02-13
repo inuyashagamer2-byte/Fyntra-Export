@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
-import { exportToMercadoLivre, exportToShopee, MarketplaceProduct, MarketplaceConfig } from '@/lib/marketplaces'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +12,9 @@ interface ExportResult {
 
 export async function POST() {
   try {
+    // ✅ Importa só quando a rota for chamada (não no build)
+    const { exportToMercadoLivre, exportToShopee } = await import('@/lib/marketplaces')
+
     const products = await prisma.product.findMany({
       where: { status: 'pending' }
     })
@@ -29,9 +31,9 @@ export async function POST() {
 
     for (const product of products) {
       const exportResults: ExportResult = { productId: product.id, status: 'success', markets: [] }
-      
+
       try {
-        const productData: MarketplaceProduct = {
+        const productData = {
           name: product.name,
           description: product.description || '',
           category: product.category || '',
@@ -39,17 +41,17 @@ export async function POST() {
           imageUrl: product.imageUrl || ''
         }
 
-        if (mlConfig) {
+        if (mlConfig?.accessToken) {
           await exportToMercadoLivre(productData, {
-            accessToken: mlConfig.accessToken || '',
+            accessToken: mlConfig.accessToken
           })
           exportResults.markets.push('Mercado Livre')
         }
-        
-        if (shopeeConfig) {
+
+        if (shopeeConfig?.accessToken) {
           await exportToShopee(productData, {
-            accessToken: shopeeConfig.accessToken || '',
-            shopId: shopeeConfig.refreshToken || '' // We stored shopId in refreshToken
+            accessToken: shopeeConfig.accessToken,
+            shopId: shopeeConfig.refreshToken || ''
           })
           exportResults.markets.push('Shopee')
         }
@@ -60,7 +62,7 @@ export async function POST() {
         })
       } catch (err: any) {
         exportResults.status = 'partial_error'
-        exportResults.error = err.message
+        exportResults.error = err?.message || String(err)
       }
 
       results.push(exportResults)
@@ -69,6 +71,6 @@ export async function POST() {
     return NextResponse.json({ results })
   } catch (error: any) {
     console.error('Global Export Error:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error?.message || String(error) }, { status: 500 })
   }
 }
